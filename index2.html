@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--font-sans);background:transparent;color:var(--color-text-primary);font-size:14px}
+:root{--azul:#1F3864;--naranja:#F4B942;--azul-claro:#D6E4F0}
+.app{max-width:900px;margin:0 auto;padding:8px 0}
+.header{background:var(--azul);border-radius:var(--border-radius-lg);padding:16px 20px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between}
+.header h1{color:#fff;font-size:16px;font-weight:500}
+.bcra-status{font-size:12px;padding:4px 10px;border-radius:var(--border-radius-md);font-weight:500}
+.bcra-ok{background:#1E7145;color:#fff}
+.bcra-loading{background:#888;color:#fff}
+.bcra-err{background:#A32D2D;color:#fff}
+.tabs{display:flex;gap:4px;margin-bottom:12px}
+.tab{padding:7px 18px;border-radius:var(--border-radius-md);border:0.5px solid var(--color-border-secondary);background:var(--color-background-primary);cursor:pointer;font-size:13px;color:var(--color-text-secondary);transition:all .15s}
+.tab.active{background:var(--azul);color:#fff;border-color:var(--azul)}
+.card{background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg);padding:16px;margin-bottom:12px}
+.form-grid{display:grid;grid-template-columns:130px 1fr 140px 130px auto;gap:8px;align-items:end}
+.field label{font-size:11px;color:var(--color-text-secondary);display:block;margin-bottom:4px}
+input,select{width:100%;padding:7px 10px;border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);background:var(--color-background-primary);color:var(--color-text-primary);font-size:13px}
+input:focus,select:focus{outline:none;border-color:var(--azul)}
+.btn{padding:7px 16px;border-radius:var(--border-radius-md);border:none;cursor:pointer;font-size:13px;font-weight:500;transition:all .15s}
+.btn-primary{background:var(--azul);color:#fff}
+.btn-primary:hover{opacity:.85}
+.btn-orange{background:var(--naranja);color:#1F3864}
+.btn-orange:hover{opacity:.85}
+.btn-sm{padding:4px 10px;font-size:12px;background:transparent;border:0.5px solid var(--color-border-secondary);color:var(--color-text-secondary);cursor:pointer;border-radius:var(--border-radius-md)}
+.btn-sm:hover{background:var(--color-background-secondary)}
+.btn-del{border-color:#F09595;color:#A32D2D}
+.btn-del:hover{background:#FCEBEB}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;padding:8px 10px;font-size:11px;font-weight:500;color:var(--color-text-secondary);border-bottom:1px solid var(--color-border-tertiary);background:var(--color-background-secondary);position:sticky;top:0}
+td{padding:8px 10px;border-bottom:0.5px solid var(--color-border-tertiary);vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:var(--color-background-secondary)}
+.tr-total td{background:var(--naranja)!important;font-weight:500;color:#1F3864;border-top:1px solid #E6A800}
+.num{text-align:right;font-variant-numeric:tabular-nums}
+.tc-auto{color:#7030A0;font-size:12px}
+.tc-man{color:#185FA5;font-size:12px}
+.no-data{text-align:center;padding:40px;color:var(--color-text-secondary);font-size:13px}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:12px}
+.stat{background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:12px}
+.stat-label{font-size:11px;color:var(--color-text-secondary);margin-bottom:4px}
+.stat-value{font-size:22px;font-weight:500}
+.mes-table th{background:var(--azul);color:#fff}
+.badge{display:inline-block;padding:2px 8px;border-radius:var(--border-radius-md);font-size:11px}
+.badge-auto{background:#EDE9FE;color:#7030A0}
+.badge-man{background:#EFF6FF;color:#185FA5}
+.badge-nodata{background:#FEF3C7;color:#854F0B}
+.scroll-table{max-height:420px;overflow-y:auto;border-radius:var(--border-radius-md);border:0.5px solid var(--color-border-tertiary)}
+.toolbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.toolbar-left{display:flex;gap:8px;align-items:center}
+.info-bar{font-size:11px;color:var(--color-text-secondary);padding:6px 10px;background:var(--color-background-secondary);border-radius:var(--border-radius-md);margin-bottom:10px}
+</style>
+</head>
+<body>
+<div class="app" id="root"></div>
+
+<script>
+const STORAGE_KEY = 'lebron_transferencias_v1';
+const BCRA_URL = 'https://api.bcra.gob.ar/estadisticas/v3.0/datosvariable/4/2020-01-01/2025-12-31';
+
+let state = {
+  tab: 'detalle',
+  bcraStatus: 'loading',
+  bcraRates: {},
+  transfers: [],
+  form: { fecha: '', desc: '', ars: '', tc: '' },
+  editId: null,
+  nextId: 1
+};
+
+function fmt(n, decimals=2){ return n==null||isNaN(n)?'-':Number(n).toLocaleString('es-AR',{minimumFractionDigits:decimals,maximumFractionDigits:decimals}); }
+function fmtARS(n){ return '$\u00A0'+fmt(n); }
+function fmtUSD(n){ return 'USD\u00A0'+fmt(n); }
+function dateKey(d){ return d ? d.substring(0,10) : ''; }
+function mesAnio(d){ if(!d) return ''; const [y,m]=d.split('-'); return `${m}/${y}`; }
+
+async function loadBCRA(){
+  try {
+    const res = await fetch(BCRA_URL, {headers:{'Accept':'application/json'}});
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    const data = await res.json();
+    const rates = {};
+    (data.results||[]).forEach(r=>{ rates[r.fecha.substring(0,10)]=r.valor; });
+    state.bcraRates = rates;
+    state.bcraStatus = 'ok';
+  } catch(e) {
+    try {
+      const proxy = `https://api.allorigins.win/get?url=${encodeURIComponent(BCRA_URL)}`;
+      const res2 = await fetch(proxy);
+      const wrapper = await res2.json();
+      const data = JSON.parse(wrapper.contents);
+      const rates = {};
+      (data.results||[]).forEach(r=>{ rates[r.fecha.substring(0,10)]=r.valor; });
+      state.bcraRates = rates;
+      state.bcraStatus = 'ok';
+    } catch(e2){
+      state.bcraStatus = 'error';
+    }
+  }
+  render();
+}
+
+async function loadStorage(){
+  try {
+    const res = await window.storage.get(STORAGE_KEY);
+    if(res && res.value){
+      const saved = JSON.parse(res.value);
+      state.transfers = saved.transfers || [];
+      state.nextId = saved.nextId || (state.transfers.length + 1);
+    }
+  } catch(e){}
+}
+
+async function saveStorage(){
+  try {
+    await window.storage.set(STORAGE_KEY, JSON.stringify({transfers:state.transfers, nextId:state.nextId}));
+  } catch(e){}
+}
+
+function getTCForDate(fecha){
+  if(!fecha || state.bcraStatus !== 'ok') return null;
+  const key = dateKey(fecha);
+  if(state.bcraRates[key]) return state.bcraRates[key];
+  const keys = Object.keys(state.bcraRates).filter(k=>k<=key).sort();
+  if(keys.length) return state.bcraRates[keys[keys.length-1]];
+  return null;
+}
+
+function addTransfer(){
+  const {fecha,desc,ars,tc} = state.form;
+  if(!fecha||!ars||isNaN(parseFloat(ars))) return;
+  const autoTC = getTCForDate(fecha);
+  const finalTC = tc ? parseFloat(tc) : autoTC;
+  const transfer = {
+    id: state.nextId++,
+    fecha, desc,
+    ars: parseFloat(ars),
+    tc: finalTC,
+    tcManual: !!tc,
+    usd: finalTC ? parseFloat(ars)/finalTC : null
+  };
+  if(state.editId){
+    state.transfers = state.transfers.map(t=>t.id===state.editId?{...transfer,id:state.editId}:t);
+    state.editId=null;
+  } else {
+    state.transfers.push(transfer);
+  }
+  state.form = {fecha:'',desc:'',ars:'',tc:''};
+  saveStorage();
+  render();
+}
+
+function deleteTransfer(id){
+  state.transfers = state.transfers.filter(t=>t.id!==id);
+  saveStorage();
+  render();
+}
+
+function editTransfer(id){
+  const t = state.transfers.find(x=>x.id===id);
+  if(!t) return;
+  state.editId = id;
+  state.form = {fecha:t.fecha, desc:t.desc, ars:String(t.ars), tc:t.tcManual?String(t.tc):''};
+  render();
+}
+
+function exportCSV(){
+  const rows = [['Fecha','Descripcion','Mes/Anio','Monto ARS','TC Oficial BCRA','Equivalente USD']];
+  state.transfers.forEach(t=>{
+    rows.push([t.fecha, t.desc, mesAnio(t.fecha), t.ars, t.tc||'', t.usd||'']);
+  });
+  const csv = rows.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const blob = new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'Transferencias_Lebron.csv';
+  a.click();
+}
+
+function getMonthlySummary(){
+  const map = {};
+  state.transfers.forEach(t=>{
+    const k = mesAnio(t.fecha);
+    if(!map[k]) map[k]={mes:k,count:0,ars:0,usd:0,tcItems:[]};
+    map[k].count++;
+    map[k].ars += t.ars||0;
+    map[k].usd += t.usd||0;
+    if(t.tc) map[k].tcItems.push({tc:t.tc,ars:t.ars});
+  });
+  Object.values(map).forEach(m=>{
+    const totalARS = m.tcItems.reduce((s,x)=>s+x.ars,0);
+    m.tcProm = totalARS ? m.tcItems.reduce((s,x)=>s+x.tc*x.ars,0)/totalARS : null;
+  });
+  return Object.values(map).sort((a,b)=>{
+    const [ma,ya]=a.mes.split('/'), [mb,yb]=b.mes.split('/');
+    return ya!==yb?ya-yb:ma-mb;
+  });
+}
+
+function renderForm(){
+  const {fecha,desc,ars,tc} = state.form;
+  const autoTC = getTCForDate(fecha);
+  const tcDisplay = tc || (autoTC?autoTC.toFixed(2):'');
+  return `
+  <div class="card">
+    <div class="toolbar-left" style="margin-bottom:10px">
+      <span style="font-weight:500;font-size:13px">${state.editId?'Editar transferencia':'Nueva transferencia'}</span>
+      ${state.editId?`<button class="btn-sm" onclick="state.editId=null;state.form={fecha:'',desc:'',ars:'',tc:''};render()">Cancelar</button>`:''}
+    </div>
+    <div class="form-grid">
+      <div class="field">
+        <label>Fecha</label>
+        <input type="date" value="${fecha}" onchange="state.form.fecha=this.value;render()">
+      </div>
+      <div class="field">
+        <label>Descripción / Concepto</label>
+        <input type="text" value="${desc}" placeholder="A quién, motivo..." oninput="state.form.desc=this.value">
+      </div>
+      <div class="field">
+        <label>Monto ARS</label>
+        <input type="number" value="${ars}" placeholder="0.00" oninput="state.form.ars=this.value">
+      </div>
+      <div class="field">
+        <label>TC Oficial <span style="font-size:10px;color:var(--color-text-secondary)">(auto si vacío)</span></label>
+        <input type="number" value="${tc}" placeholder="${autoTC?autoTC.toFixed(2):'sin fecha'}" oninput="state.form.tc=this.value">
+      </div>
+      <div class="field">
+        <label>&nbsp;</label>
+        <button class="btn btn-primary" onclick="addTransfer()">${state.editId?'Guardar':'Agregar'}</button>
+      </div>
+    </div>
+    ${fecha&&autoTC&&!tc?`<div style="margin-top:8px;font-size:11px;color:#7030A0">TC automático para ${fecha.split('-').reverse().join('/')}: $${autoTC.toFixed(2)} (BCRA Com. A 3500)</div>`:''}
+    ${fecha&&!autoTC&&state.bcraStatus==='ok'?`<div style="margin-top:8px;font-size:11px;color:#854F0B">Sin cotización para esa fecha. Ingresá el TC manualmente.</div>`:''}
+  </div>`;
+}
+
+function renderBCRAStatus(){
+  const s = state.bcraStatus;
+  if(s==='loading') return '<span class="bcra-status bcra-loading">Cargando BCRA...</span>';
+  if(s==='ok'){
+    const count = Object.keys(state.bcraRates).length;
+    return `<span class="bcra-status bcra-ok">${count} cotizaciones BCRA cargadas</span>`;
+  }
+  return '<span class="bcra-status bcra-err">BCRA no disponible — ingresá TC manual</span>';
+}
+
+function renderDetalle(){
+  const totalARS = state.transfers.reduce((s,t)=>s+(t.ars||0),0);
+  const totalUSD = state.transfers.reduce((s,t)=>s+(t.usd||0),0);
+  const sorted = [...state.transfers].sort((a,b)=>a.fecha.localeCompare(b.fecha));
+
+  return `
+  <div class="stats">
+    <div class="stat"><div class="stat-label">Total transferencias</div><div class="stat-value">${state.transfers.length}</div></div>
+    <div class="stat"><div class="stat-label">Total ARS</div><div class="stat-value" style="font-size:16px">${fmtARS(totalARS)}</div></div>
+    <div class="stat"><div class="stat-label">Total USD (oficial BCRA)</div><div class="stat-value" style="font-size:16px">${fmtUSD(totalUSD)}</div></div>
+  </div>
+  ${renderForm()}
+  <div class="card" style="padding:0">
+    <div style="padding:12px 16px;display:flex;align-items:center;justify-content:space-between;border-bottom:0.5px solid var(--color-border-tertiary)">
+      <span style="font-weight:500;font-size:13px">Registro de transferencias</span>
+      <div style="display:flex;gap:8px">
+        <button class="btn-sm" onclick="exportCSV()">Exportar CSV</button>
+      </div>
+    </div>
+    ${state.transfers.length===0?`<div class="no-data">Sin transferencias cargadas. Agregá la primera arriba.</div>`:`
+    <div class="scroll-table">
+      <table>
+        <thead><tr>
+          <th>Fecha</th><th>Descripción</th><th>Monto ARS</th>
+          <th class="num">TC BCRA</th><th class="num">USD equiv.</th><th></th>
+        </tr></thead>
+        <tbody>
+          ${sorted.map(t=>`
+          <tr>
+            <td>${t.fecha.split('-').reverse().join('/')}</td>
+            <td style="max-width:200px">${t.desc||'<span style="color:var(--color-text-secondary)">—</span>'}</td>
+            <td class="num">${fmtARS(t.ars)}</td>
+            <td class="num"><span class="${t.tcManual?'tc-man':'tc-auto'}">${t.tc?'$'+fmt(t.tc):'<span style="color:#854F0B">sin TC</span>'}</span></td>
+            <td class="num">${t.usd?fmtUSD(t.usd):'<span style="color:var(--color-text-secondary)">—</span>'}</td>
+            <td style="display:flex;gap:4px;justify-content:flex-end">
+              <button class="btn-sm" onclick="editTransfer(${t.id})">Editar</button>
+              <button class="btn-sm btn-del" onclick="deleteTransfer(${t.id})">Borrar</button>
+            </td>
+          </tr>`).join('')}
+          <tr class="tr-total">
+            <td colspan="2"><strong>TOTAL</strong></td>
+            <td class="num"><strong>${fmtARS(totalARS)}</strong></td>
+            <td></td>
+            <td class="num"><strong>${fmtUSD(totalUSD)}</strong></td>
+            <td></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>`}
+  </div>
+  <div class="info-bar">
+    <span class="badge badge-auto">TC morado</span> = cotización automática BCRA &nbsp;|&nbsp; 
+    <span class="badge badge-man">TC azul</span> = ingresado manualmente &nbsp;|&nbsp;
+    <span class="badge badge-nodata">sin TC</span> = fecha sin cotización disponible
+  </div>`;
+}
+
+function renderResumen(){
+  const summary = getMonthlySummary();
+  const totalARS = summary.reduce((s,m)=>s+m.ars,0);
+  const totalUSD = summary.reduce((s,m)=>s+m.usd,0);
+  const totalCount = summary.reduce((s,m)=>s+m.count,0);
+
+  return `
+  <div class="stats">
+    <div class="stat"><div class="stat-label">Meses con movimientos</div><div class="stat-value">${summary.length}</div></div>
+    <div class="stat"><div class="stat-label">Total ARS</div><div class="stat-value" style="font-size:16px">${fmtARS(totalARS)}</div></div>
+    <div class="stat"><div class="stat-label">Total USD (oficial BCRA)</div><div class="stat-value" style="font-size:16px">${fmtUSD(totalUSD)}</div></div>
+  </div>
+  <div class="card" style="padding:0">
+    <div style="padding:12px 16px;border-bottom:0.5px solid var(--color-border-tertiary)">
+      <span style="font-weight:500;font-size:13px">Resumen mensual</span>
+    </div>
+    ${summary.length===0?`<div class="no-data">Sin datos. Cargá transferencias en la pestaña Detalle.</div>`:`
+    <table class="mes-table">
+      <thead><tr>
+        <th>Mes / Año</th><th class="num">Cant.</th>
+        <th class="num">Total ARS</th><th class="num">TC prom. BCRA</th><th class="num">Total USD</th>
+      </tr></thead>
+      <tbody>
+        ${summary.map(m=>`
+        <tr>
+          <td><strong>${m.mes}</strong></td>
+          <td class="num">${m.count}</td>
+          <td class="num">${fmtARS(m.ars)}</td>
+          <td class="num">${m.tcProm?'$'+fmt(m.tcProm):'—'}</td>
+          <td class="num">${fmtUSD(m.usd)}</td>
+        </tr>`).join('')}
+        <tr class="tr-total">
+          <td><strong>GRAN TOTAL</strong></td>
+          <td class="num"><strong>${totalCount}</strong></td>
+          <td class="num"><strong>${fmtARS(totalARS)}</strong></td>
+          <td class="num">—</td>
+          <td class="num"><strong>${fmtUSD(totalUSD)}</strong></td>
+        </tr>
+      </tbody>
+    </table>`}
+  </div>`;
+}
+
+function render(){
+  const t = state.tab;
+  document.getElementById('root').innerHTML = `
+    <div class="header">
+      <h1>Transferencias — Lebron Suplementos</h1>
+      ${renderBCRAStatus()}
+    </div>
+    <div class="tabs">
+      <button class="tab ${t==='detalle'?'active':''}" onclick="state.tab='detalle';render()">Detalle</button>
+      <button class="tab ${t==='resumen'?'active':''}" onclick="state.tab='resumen';render()">Resumen por mes</button>
+    </div>
+    ${t==='detalle'?renderDetalle():renderResumen()}
+  `;
+}
+
+async function init(){
+  render();
+  await Promise.all([loadBCRA(), loadStorage()]);
+  render();
+}
+
+init();
+</script>
+</body>
+</html>
